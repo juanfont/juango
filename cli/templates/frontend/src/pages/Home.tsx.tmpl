@@ -1,0 +1,28 @@
+import { useEffect } from 'react'
+import { useBreadcrumb, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@juango/ui'
+
+export default function Home() {
+  const { setBreadcrumb } = useBreadcrumb()
+
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Home' }])
+  }, [setBreadcrumb])
+
+  return (
+    <div className="container mx-auto p-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Welcome to {{.ProjectName}}</CardTitle>
+          <CardDescription>
+            Your application is ready. Start building!
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">
+            Edit <code className="bg-muted px-1 py-0.5 rounded">src/pages/Home.tsx</code> to customize this page.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

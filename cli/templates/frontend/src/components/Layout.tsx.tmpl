@@ -1,0 +1,79 @@
+import { Outlet } from 'react-router-dom'
+import {
+  useAuth,
+  useAdmin,
+  useBreadcrumb,
+  SidebarProvider,
+  SidebarInset,
+  SidebarTrigger,
+  Separator,
+  ImpersonationBanner,
+  NotificationBell,
+  AdminModeToggle,
+  AppSidebar,
+} from '@juango/ui'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@juango/ui'
+import { Home } from 'lucide-react'
+import React from 'react'
+
+const navItems = [
+  {
+    title: 'Home',
+    url: '/',
+    icon: Home,
+  },
+  // Add your navigation items here
+]
+
+export default function Layout() {
+  const { user, logout } = useAuth()
+  const { isImpersonating } = useAdmin()
+  const { breadcrumb } = useBreadcrumb()
+
+  return (
+    <SidebarProvider>
+      <AppSidebar
+        navMain={navItems}
+        user={user}
+        onLogout={logout}
+      />
+      <SidebarInset>
+        {isImpersonating && <ImpersonationBanner />}
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              {breadcrumb.map((item, index) => (
+                <React.Fragment key={index}>
+                  {index > 0 && <BreadcrumbSeparator />}
+                  <BreadcrumbItem>
+                    {item.href ? (
+                      <BreadcrumbLink href={item.href}>{item.label}</BreadcrumbLink>
+                    ) : (
+                      <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                    )}
+                  </BreadcrumbItem>
+                </React.Fragment>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div className="ml-auto flex items-center gap-2">
+            {user?.is_admin && <AdminModeToggle />}
+            <NotificationBell />
+          </div>
+        </header>
+        <main className="flex-1">
+          <Outlet />
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
+  )
+}

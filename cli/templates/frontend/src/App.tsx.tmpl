@@ -1,0 +1,31 @@
+import { Routes, Route } from 'react-router-dom'
+import { AuthProvider, AdminProvider, BreadcrumbProvider, ProtectedRoute, Toaster } from '@juango/ui'
+import Layout from './components/Layout'
+import Home from './pages/Home'
+import Login from './pages/Login'
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AdminProvider>
+        <BreadcrumbProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Home />} />
+              {/* Add your application-specific routes here */}
+            </Route>
+          </Routes>
+          <Toaster />
+        </BreadcrumbProvider>
+      </AdminProvider>
+    </AuthProvider>
+  )
+}
