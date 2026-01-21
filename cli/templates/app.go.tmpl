@@ -1,0 +1,103 @@
+package {{.ProjectNameLower}}
+
+import (
+	"context"
+	"embed"
+	"net/http"
+	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/juanfont/juango/frontend"
+	"github.com/juanfont/juango/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog/log"
+	"{{.ModulePath}}/internal/api"
+	"{{.ModulePath}}/internal/database"
+	"{{.ModulePath}}/internal/types"
+)
+
+//go:embed frontend/dist/*
+var frontendFS embed.FS
+
+type App struct {
+	config *types.Config
+	db     *database.Database
+	server *http.Server
+}
+
+func New(config *types.Config) (*App, error) {
+	db, err := database.New(config.Database.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	return &App{
+		config: config,
+		db:     db,
+	}, nil
+}
+
+func (a *App) Shutdown(ctx context.Context) error {
+	var err error
+
+	if a.server != nil {
+		log.Info().Msg("Shutting down HTTP server")
+		if shutdownErr := a.server.Shutdown(ctx); shutdownErr != nil {
+			log.Error().Err(shutdownErr).Msg("Error during HTTP server shutdown")
+			err = shutdownErr
+		}
+	}
+
+	if a.db != nil {
+		log.Info().Msg("Closing database connection")
+		if closeErr := a.db.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("Error closing database")
+			if err == nil {
+				err = closeErr
+			}
+		}
+	}
+
+	return err
+}
+
+func (a *App) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return a.Shutdown(ctx)
+}
+
+func (a *App) Serve() error {
+	router := mux.NewRouter()
+
+	// Apply middleware
+	router.Use(middleware.Metrics())
+	router.Use(middleware.Logging(log.Logger))
+	router.Use(middleware.Recovery())
+
+	// Metrics endpoint
+	router.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		promhttp.Handler().ServeHTTP(w, r)
+	})
+
+	// Setup API routes
+	ctx := context.Background()
+	if _, err := api.NewApp(ctx, a.config, a.db, router); err != nil {
+		return err
+	}
+
+	// Serve frontend
+	frontend.Setup(router, frontendFS, "frontend/dist")
+
+	// Create HTTP server
+	a.server = &http.Server{
+		Addr:    a.config.ListenAddr,
+		Handler: router,
+	}
+
+	log.Info().
+		Str("addr", a.config.ListenAddr).
+		Msg("Server starting")
+
+	return a.server.ListenAndServe()
+}

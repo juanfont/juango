@@ -1,0 +1,41 @@
+# {{.ProjectName}} Configuration
+
+listen_addr: ":{{.Port}}"
+advertise_url: "http://localhost:{{.Port}}"
+
+# Admin mode timeout (how long admin mode stays active)
+admin_mode_timeout: 30m
+
+# Database configuration
+database:
+  path: "{{.ProjectName}}.db"
+
+# Session configuration
+session:
+  cookie_name: "{{.ProjectName}}_session"
+  cookie_expiry: 24h
+  # Generate with: openssl rand -hex 16
+  authentication_key: "your-32-byte-auth-key-here-xxx"
+  encryption_key: "your-32-byte-encryption-key-xx"
+
+# OIDC configuration
+oidc:
+  issuer: "https://login.microsoftonline.com/{tenant}/v2.0"
+  client_id: "your-client-id"
+  client_secret: "your-client-secret"
+  scopes:
+    - openid
+    - profile
+    - email
+
+# Redis configuration (for task queue)
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+# Logging configuration
+logging:
+  level: info
+  format: text
+  with_caller: false

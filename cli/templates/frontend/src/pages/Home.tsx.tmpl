@@ -1,0 +1,29 @@
+import { useEffect } from 'react'
+import { useBreadcrumb } from '../contexts/BreadcrumbContext'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+
+export default function Home() {
+  const { setItems } = useBreadcrumb()
+
+  useEffect(() => {
+    setItems([{ label: 'Home' }])
+  }, [setItems])
+
+  return (
+    <div className="container mx-auto">
+      <Card>
+        <CardHeader>
+          <CardTitle>Welcome to {{.ProjectNameTitle}}</CardTitle>
+          <CardDescription>
+            Your application is ready. Start building!
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">
+            Edit <code className="bg-muted px-1 py-0.5 rounded">src/pages/Home.tsx</code> to customize this page.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

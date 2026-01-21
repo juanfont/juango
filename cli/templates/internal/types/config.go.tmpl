@@ -1,0 +1,176 @@
+package types
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/viper"
+)
+
+const (
+	JSONLogFormat = "json"
+	TextLogFormat = "text"
+)
+
+type LogConfig struct {
+	Format     string        `mapstructure:"format"`
+	Level      zerolog.Level `mapstructure:"level"`
+	WithCaller bool          `mapstructure:"with_caller"`
+}
+
+type SessionConfig struct {
+	AuthenticationKey string        `mapstructure:"authentication_key"`
+	EncryptionKey     string        `mapstructure:"encryption_key"`
+	CookieName        string        `mapstructure:"cookie_name"`
+	CookieExpiry      time.Duration `mapstructure:"cookie_expiry"`
+}
+
+type DatabaseConfig struct {
+	Path string `mapstructure:"path"`
+}
+
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
+}
+
+type OIDCConfig struct {
+	Issuer       string   `mapstructure:"issuer"`
+	ClientID     string   `mapstructure:"client_id"`
+	ClientSecret string   `mapstructure:"client_secret"`
+	Scopes       []string `mapstructure:"scopes"`
+}
+
+type Config struct {
+	ListenAddr       string        `mapstructure:"listen_addr"`
+	AdvertiseURL     string        `mapstructure:"advertise_url"`
+	AdminModeTimeout time.Duration `mapstructure:"admin_mode_timeout"`
+
+	Session  SessionConfig  `mapstructure:"session"`
+	Database DatabaseConfig `mapstructure:"database"`
+	Redis    RedisConfig    `mapstructure:"redis"`
+	OIDC     OIDCConfig     `mapstructure:"oidc"`
+	Logging  LogConfig      `mapstructure:"logging"`
+}
+
+func ReadViperConfig(path string, isFile bool) error {
+	log.Debug().Msg("Reading config")
+	if isFile {
+		viper.SetConfigFile(path)
+	} else {
+		viper.SetConfigName("config")
+		if path == "" {
+			viper.AddConfigPath("/etc/{{.ProjectName}}/")
+			viper.AddConfigPath("$HOME/.{{.ProjectName}}")
+			viper.AddConfigPath(".")
+		} else {
+			viper.AddConfigPath(path)
+		}
+	}
+
+	viper.SetEnvPrefix("{{.ProjectNameUpper}}")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+
+	viper.SetDefault("admin_mode_timeout", 30*time.Minute)
+	viper.SetDefault("redis.addr", "localhost:6379")
+	viper.SetDefault("logging.level", "info")
+	viper.SetDefault("logging.format", TextLogFormat)
+
+	if err := viper.ReadInConfig(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func GetConfig() (*Config, error) {
+	if err := validateConfig(); err != nil {
+		return nil, err
+	}
+
+	logConfig := getLogConfig()
+	zerolog.SetGlobalLevel(logConfig.Level)
+
+	return &Config{
+		ListenAddr:       viper.GetString("listen_addr"),
+		AdvertiseURL:     viper.GetString("advertise_url"),
+		AdminModeTimeout: viper.GetDuration("admin_mode_timeout"),
+		Logging:          logConfig,
+		Database: DatabaseConfig{
+			Path: viper.GetString("database.path"),
+		},
+		Redis: RedisConfig{
+			Addr:     viper.GetString("redis.addr"),
+			Password: viper.GetString("redis.password"),
+			DB:       viper.GetInt("redis.db"),
+		},
+		Session: SessionConfig{
+			CookieName:        viper.GetString("session.cookie_name"),
+			CookieExpiry:      viper.GetDuration("session.cookie_expiry"),
+			AuthenticationKey: viper.GetString("session.authentication_key"),
+			EncryptionKey:     viper.GetString("session.encryption_key"),
+		},
+		OIDC: OIDCConfig{
+			ClientID:     viper.GetString("oidc.client_id"),
+			ClientSecret: viper.GetString("oidc.client_secret"),
+			Issuer:       viper.GetString("oidc.issuer"),
+			Scopes:       viper.GetStringSlice("oidc.scopes"),
+		},
+	}, nil
+}
+
+func getLogConfig() LogConfig {
+	logLevelStr := viper.GetString("logging.level")
+	logLevel, err := zerolog.ParseLevel(logLevelStr)
+	if err != nil {
+		logLevel = zerolog.InfoLevel
+	}
+
+	logFormat := viper.GetString("logging.format")
+	if logFormat != JSONLogFormat && logFormat != TextLogFormat {
+		logFormat = TextLogFormat
+	}
+
+	return LogConfig{
+		Format:     logFormat,
+		Level:      logLevel,
+		WithCaller: viper.GetBool("logging.with_caller"),
+	}
+}
+
+func validateConfig() error {
+	var errorText string
+
+	if viper.GetString("listen_addr") == "" {
+		errorText += "listen_addr is required\n"
+	}
+	if viper.GetString("advertise_url") == "" {
+		errorText += "advertise_url is required\n"
+	}
+	if viper.GetString("database.path") == "" {
+		errorText += "database.path is required\n"
+	}
+	if len(viper.GetString("session.authentication_key")) != 32 {
+		return fmt.Errorf("session.authentication_key must be 32 bytes")
+	}
+	if len(viper.GetString("session.encryption_key")) != 32 {
+		return fmt.Errorf("session.encryption_key must be 32 bytes")
+	}
+	if viper.GetString("oidc.client_id") == "" {
+		errorText += "oidc.client_id is required\n"
+	}
+	if viper.GetString("oidc.issuer") == "" {
+		errorText += "oidc.issuer is required\n"
+	}
+
+	if errorText != "" {
+		return errors.New(strings.TrimSuffix(errorText, "\n"))
+	}
+	return nil
+}
