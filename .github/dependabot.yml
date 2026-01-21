@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(go):"
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(npm):"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(actions):"

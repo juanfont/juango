@@ -1,0 +1,95 @@
+package database
+
+import (
+	"context"
+	_ "embed"
+
+	"github.com/google/uuid"
+	"github.com/juanfont/juango/database"
+	juangotypes "github.com/juanfont/juango/types"
+	"github.com/jmoiron/sqlx"
+)
+
+//go:embed sql/schema.sql
+var dbSchema string
+
+type Database struct {
+	*database.Database
+}
+
+func New(path string) (*Database, error) {
+	db, err := database.New(path, dbSchema)
+	if err != nil {
+		return nil, err
+	}
+	return &Database{Database: db}, nil
+}
+
+// CreateOrUpdateUserFromClaim creates or updates a user from OIDC claims.
+// Implements auth.UserStore interface.
+func (d *Database) CreateOrUpdateUserFromClaim(claims *juangotypes.OIDCClaims) (*juangotypes.User, error) {
+	identifier := claims.Identifier()
+
+	var user juangotypes.User
+	err := d.DB().Get(&user, "SELECT * FROM users WHERE provider_identifier = ?", identifier)
+	if err != nil {
+		// Create new user
+		user = juangotypes.User{
+			ID: uuid.New(),
+		}
+		user.FromClaim(claims)
+
+		_, err = d.DB().NamedExec(`
+			INSERT INTO users (id, email, name, display_name, profile_pic_url, provider_identifier, is_admin, created_at, modified_at)
+			VALUES (:id, :email, :name, :display_name, :profile_pic_url, :provider_identifier, :is_admin, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		`, user)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Update existing user
+		user.FromClaim(claims)
+		_, err = d.DB().NamedExec(`
+			UPDATE users SET email = :email, name = :name, display_name = :display_name,
+			profile_pic_url = :profile_pic_url, modified_at = CURRENT_TIMESTAMP
+			WHERE id = :id
+		`, user)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &user, nil
+}
+
+// UpdateLastLogin updates the last login timestamp.
+func (d *Database) UpdateLastLogin(ctx context.Context, userID uuid.UUID) error {
+	_, err := d.DB().ExecContext(ctx, "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", userID.String())
+	return err
+}
+
+// GetUserByID retrieves a user by ID.
+// Implements auth.UserStore interface.
+func (d *Database) GetUserByID(ctx context.Context, userID uuid.UUID) (*juangotypes.User, error) {
+	var user juangotypes.User
+	err := d.DB().GetContext(ctx, &user, "SELECT * FROM users WHERE id = ?", userID.String())
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// CreateAuditLog creates an audit log entry.
+// Implements auth.AuditLogger interface.
+func (d *Database) CreateAuditLog(ctx context.Context, log *juangotypes.AuditLog) error {
+	_, err := d.DB().NamedExecContext(ctx, `
+		INSERT INTO audit_log (timestamp, actor_user_id, action, resource_type, resource_id, changes, ip_address, user_agent)
+		VALUES (:timestamp, :actor_user_id, :action, :resource_type, :resource_id, :changes, :ip_address, :user_agent)
+	`, log)
+	return err
+}
+
+// WithTx executes a function within a database transaction.
+func (d *Database) WithTx(ctx context.Context, fn func(*sqlx.Tx) error) error {
+	return d.Database.WithTx(ctx, fn)
+}

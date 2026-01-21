@@ -1,0 +1,140 @@
+package api
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
+	"github.com/juanfont/juango/admin"
+	"github.com/juanfont/juango/auth"
+	juangotypes "github.com/juanfont/juango/types"
+	"github.com/michaeljs1990/sqlitestore"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"{{.ModulePath}}/internal/database"
+	"{{.ModulePath}}/internal/types"
+)
+
+type App struct {
+	config       *types.Config
+	db           *database.Database
+	oidcProvider *auth.OIDCProvider
+	router       *mux.Router
+
+	sessionStore     *sqlitestore.SqliteStore
+	sessionMiddleware *auth.SessionMiddleware
+	oidcHandlers     *auth.OIDCHandlers
+	adminHandlers    *admin.Handlers
+
+	logger zerolog.Logger
+}
+
+func NewApp(ctx context.Context, config *types.Config, database *database.Database, router *mux.Router) (*App, error) {
+	// Setup OIDC provider
+	oidcProvider, err := auth.NewOIDCProvider(ctx, auth.OIDCProviderConfig{
+		ServerURL: config.AdvertiseURL,
+		OIDCConfig: juangotypes.OIDCConfig{
+			Issuer:       config.OIDC.Issuer,
+			ClientID:     config.OIDC.ClientID,
+			ClientSecret: config.OIDC.ClientSecret,
+			Scopes:       config.OIDC.Scopes,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Setup session store
+	sessionStore, err := sqlitestore.NewSqliteStoreFromConnection(
+		database.DB().DB,
+		"sessions",
+		"/",
+		int(config.Session.CookieExpiry.Seconds()),
+		[]byte(config.Session.AuthenticationKey),
+		[]byte(config.Session.EncryptionKey),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionStore.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   int(config.Session.CookieExpiry.Seconds()),
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	app := &App{
+		config:       config,
+		db:           database,
+		oidcProvider: oidcProvider,
+		sessionStore: sessionStore,
+		router:       router,
+		logger:       log.Logger,
+	}
+
+	// Setup session middleware
+	app.sessionMiddleware = auth.NewSessionMiddleware(
+		sessionStore,
+		config.Session.CookieName,
+		database,
+		database,
+		config.AdminModeTimeout,
+	)
+
+	// Setup OIDC handlers
+	app.oidcHandlers = auth.NewOIDCHandlers(
+		oidcProvider,
+		sessionStore,
+		config.Session.CookieName,
+		database,
+		database,
+	)
+
+	// Setup admin handlers
+	app.adminHandlers = admin.NewHandlers(
+		sessionStore,
+		config.Session.CookieName,
+		database,
+		database,
+		config.AdminModeTimeout,
+	)
+
+	// Register routes
+	app.registerRoutes()
+
+	return app, nil
+}
+
+func (a *App) registerRoutes() {
+	// Auth routes
+	a.router.HandleFunc(a.oidcProvider.CallbackPath(), a.oidcHandlers.CallbackHandler)
+	a.router.HandleFunc("/api/auth/login", a.oidcHandlers.LoginHandler)
+	a.router.HandleFunc("/api/auth/logout", a.oidcHandlers.LogoutHandler).Methods("POST")
+	a.router.HandleFunc("/api/auth/session", a.oidcHandlers.SessionCheckHandler).Methods("GET")
+
+	// Admin mode routes
+	a.router.HandleFunc("/api/admin/mode/status",
+		a.sessionMiddleware.RequireAuth(a.adminHandlers.AdminModeStatusHandler)).Methods("GET")
+	a.router.HandleFunc("/api/admin/mode/enable",
+		a.sessionMiddleware.RequireAuth(
+			a.sessionMiddleware.RequireAdmin(a.adminHandlers.AdminModeEnableHandler))).Methods("POST")
+	a.router.HandleFunc("/api/admin/mode/disable",
+		a.sessionMiddleware.RequireAuth(
+			a.sessionMiddleware.RequireAdmin(a.adminHandlers.AdminModeDisableHandler))).Methods("POST")
+
+	// Impersonation routes
+	a.router.HandleFunc("/api/admin/impersonate/start",
+		a.sessionMiddleware.RequireAuth(
+			a.sessionMiddleware.RequireAdminMode(a.adminHandlers.ImpersonationStartHandler))).Methods("POST")
+	a.router.HandleFunc("/api/admin/impersonate/stop",
+		a.sessionMiddleware.RequireAuth(a.adminHandlers.ImpersonationStopHandler)).Methods("POST")
+	a.router.HandleFunc("/api/admin/impersonate/status",
+		a.sessionMiddleware.RequireAuth(a.adminHandlers.ImpersonationStatusHandler)).Methods("GET")
+
+	// Add your application-specific routes here
+	// Example:
+	// a.router.HandleFunc("/api/items", a.sessionMiddleware.RequireAuth(a.GetItemsHandler)).Methods("GET")
+}

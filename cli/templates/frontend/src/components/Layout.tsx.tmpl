@@ -1,0 +1,130 @@
+import { Outlet, Link, useLocation } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import { useAdmin } from '../contexts/AdminContext'
+import { useBreadcrumb } from '../contexts/BreadcrumbContext'
+import { Button } from './ui/button'
+import { Home, LogOut, ChevronRight, Shield } from 'lucide-react'
+
+const navItems = [
+  {
+    title: 'Home',
+    url: '/',
+    icon: Home,
+  },
+  // Add your navigation items here
+]
+
+export default function Layout() {
+  const { user, logout } = useAuth()
+  const { isAdminMode, enableAdminMode, disableAdminMode } = useAdmin()
+  const { items: breadcrumbItems } = useBreadcrumb()
+  const location = useLocation()
+
+  const handleAdminModeToggle = async () => {
+    if (isAdminMode) {
+      await disableAdminMode()
+    } else {
+      await enableAdminMode('Admin mode enabled from UI')
+    }
+  }
+
+  return (
+    <div className="flex h-screen">
+      {/* Sidebar */}
+      <aside className="w-64 border-r bg-card">
+        <div className="flex h-16 items-center border-b px-6">
+          <span className="text-lg font-semibold">{{.ProjectNameTitle}}</span>
+        </div>
+        <nav className="flex-1 p-4">
+          <ul className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              const isActive = location.pathname === item.url
+              return (
+                <li key={item.url}>
+                  <Link
+                    to={item.url}
+                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.title}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
+        {/* User info */}
+        <div className="border-t p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {user?.profile_pic_url ? (
+                <img
+                  src={user.profile_pic_url}
+                  alt={user.display_name}
+                  className="h-8 w-8 rounded-full"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                  {user?.display_name?.charAt(0) || '?'}
+                </div>
+              )}
+              <div className="text-sm">
+                <div className="font-medium">{user?.display_name}</div>
+                <div className="text-xs text-muted-foreground">{user?.email}</div>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={logout}>
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex flex-1 flex-col">
+        {/* Header */}
+        <header className="flex h-16 items-center justify-between border-b px-6">
+          {/* Breadcrumb */}
+          <nav className="flex items-center gap-2 text-sm">
+            {breadcrumbItems.map((item, index) => (
+              <span key={index} className="flex items-center gap-2">
+                {index > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                {item.href ? (
+                  <Link to={item.href} className="text-muted-foreground hover:text-foreground">
+                    {item.label}
+                  </Link>
+                ) : (
+                  <span className="font-medium">{item.label}</span>
+                )}
+              </span>
+            ))}
+          </nav>
+
+          {/* Admin controls */}
+          <div className="flex items-center gap-2">
+            {user?.is_admin && (
+              <Button
+                variant={isAdminMode ? 'destructive' : 'outline'}
+                size="sm"
+                onClick={handleAdminModeToggle}
+              >
+                <Shield className="mr-2 h-4 w-4" />
+                {isAdminMode ? 'Disable Admin Mode' : 'Enable Admin Mode'}
+              </Button>
+            )}
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 overflow-auto p-6">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  )
+}
